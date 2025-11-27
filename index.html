@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tempo | Modern Team Calendar</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Date FNS (v3 CDN Bundle) -->
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        paper: '#FAFAF9',
+                        charcoal: '#1C1917',
+                        slate: {
+                            850: '#1e293b',
+                            900: '#0f172a',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        h1, h2, h3, h4 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d6d3d1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+
+        /* Glass effect utility */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .dark .glass {
+            background: rgba(15, 23, 42, 0.7);
+        }
+    </style>
+</head>
+<body class="bg-paper text-charcoal dark:bg-slate-900 dark:text-gray-100 transition-colors duration-300 selection:bg-orange-200 dark:selection:bg-orange-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { 
+            format, addMonths, subMonths, startOfMonth, endOfMonth, 
+            startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, 
+            isSameDay, addDays, isToday, parseISO, startOfDay 
+        } = dateFns;
+
+        // --- Utils & Constants ---
+
+        const EVENT_COLORS = [
+            { id: 'blue', label: 'Blue', class: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-800' },
+            { id: 'green', label: 'Green', class: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-800' },
+            { id: 'orange', label: 'Orange', class: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-200 dark:border-orange-800' },
+            { id: 'purple', label: 'Purple', class: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/40 dark:text-violet-200 dark:border-violet-800' },
+            { id: 'red', label: 'Red', class: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-200 dark:border-rose-800' },
+        ];
+
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+
+        // --- Components ---
+
+        const Modal = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+
+            // Close on Escape key
+            useEffect(() => {
+                const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+                window.addEventListener('keydown', handleEsc);
+                return () => window.removeEventListener('keydown', handleEsc);
+            }, [onClose]);
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div 
+                        className="absolute inset-0 bg-stone-900/20 dark:bg-black/50 backdrop-blur-sm transition-opacity" 
+                        onClick={onClose}
+                    ></div>
+                    <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up ring-1 ring-black/5 dark:ring-white/10">
+                        <div className="flex justify-between items-center p-6 border-b border-stone-100 dark:border-slate-700">
+                            <h3 className="text-xl font-bold font-display text-stone-800 dark:text-white">{title}</h3>
+                            <button 
+                                onClick={onClose}
+                                className="p-2 rounded-full hover:bg-stone-100 dark:hover:bg-slate-700 text-stone-400 hover:text-stone-600 transition-colors"
+                            >
+                                <i className="ph ph-x text-xl"></i>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const EventForm = ({ selectedDate, existingEvent, onSave, onDelete, onClose }) => {
+            const [title, setTitle] = useState(existingEvent?.title || '');
+            const [desc, setDesc] = useState(existingEvent?.desc || '');
+            const [time, setTime] = useState(existingEvent?.time || '09:00');
+            const [isTimeUndecided, setIsTimeUndecided] = useState(existingEvent?.isTimeUndecided || false);
+            const [colorId, setColorId] = useState(existingEvent?.color || 'blue');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!title.trim()) return;
+                
+                onSave({
+                    id: existingEvent ? existingEvent.id : generateId(),
+                    title,
+                    desc,
+                    date: existingEvent ? existingEvent.date : selectedDate.toISOString(),
+                    time,
+                    isTimeUndecided,
+                    color: colorId,
+                });
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    <div>
+                        <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">Event Title</label>
+                        <input 
+                            autoFocus
+                            type="text" 
+                            className="w-full px-4 py-3 rounded-lg bg-stone-50 dark:bg-slate-900 border border-stone-200 dark:border-slate-700 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-stone-800 dark:text-white placeholder-stone-400"
+                            placeholder="e.g. Team Standup"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                        />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">Time</label>
+                            <input 
+                                type="time" 
+                                disabled={isTimeUndecided}
+                                className={`w-full px-4 py-3 rounded-lg bg-stone-50 dark:bg-slate-900 border border-stone-200 dark:border-slate-700 focus:ring-2 focus:ring-orange-500 outline-none text-stone-800 dark:text-white ${isTimeUndecided ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                value={time}
+                                onChange={(e) => setTime(e.target.value)}
+                            />
+                            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                                <input 
+                                    type="checkbox" 
+                                    checked={isTimeUndecided}
+                                    onChange={(e) => setIsTimeUndecided(e.target.checked)}
+                                    className="w-4 h-4 rounded text-orange-600 focus:ring-orange-500 border-gray-300 dark:border-slate-600 dark:bg-slate-800"
+                                />
+                                <span className="text-xs text-stone-500 dark:text-slate-400">Time TBD</span>
+                            </label>
+                        </div>
+                         <div>
+                            <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">Date</label>
+                            <div className="w-full px-4 py-3 rounded-lg bg-stone-50 dark:bg-slate-900 border border-stone-200 dark:border-slate-700 text-stone-500 dark:text-slate-400 cursor-not-allowed">
+                                {format(selectedDate, 'MMM d, yyyy')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">Color Label</label>
+                        <div className="flex gap-3">
+                            {EVENT_COLORS.map(c => (
+                                <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => setColorId(c.id)}
+                                    className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center ${
+                                        colorId === c.id ? 'border-stone-400 scale-110' : 'border-transparent hover:scale-105'
+                                    }`}
+                                    style={{ backgroundColor: c.id === 'white' ? '#fff' : '' }}
+                                >
+                                    <div className={`w-6 h-6 rounded-full ${c.class.split(' ')[0]}`}></div>
+                                    {colorId === c.id && <i className="ph ph-check text-xs absolute text-stone-700 dark:text-white mix-blend-difference"></i>}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">Description (Optional)</label>
+                        <textarea 
+                            rows="3"
+                            className="w-full px-4 py-3 rounded-lg bg-stone-50 dark:bg-slate-900 border border-stone-200 dark:border-slate-700 focus:ring-2 focus:ring-orange-500 outline-none text-stone-800 dark:text-white resize-none"
+                            placeholder="Add details, links, or agenda..."
+                            value={desc}
+                            onChange={(e) => setDesc(e.target.value)}
+                        ></textarea>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
+                        {existingEvent && (
+                            <button 
+                                type="button"
+                                onClick={() => onDelete(existingEvent.id)}
+                                className="px-4 py-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors text-sm font-medium mr-auto"
+                            >
+                                Delete
+                            </button>
+                        )}
+                        <button 
+                            type="button" 
+                            onClick={onClose}
+                            className="px-5 py-2.5 rounded-lg text-stone-600 dark:text-slate-300 hover:bg-stone-100 dark:hover:bg-slate-700 font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit" 
+                            className="px-5 py-2.5 rounded-lg bg-charcoal dark:bg-orange-600 text-white hover:opacity-90 transition-opacity font-medium shadow-lg shadow-orange-500/20"
+                        >
+                            {existingEvent ? 'Save Changes' : 'Add Event'}
+                        </button>
+                    </div>
+                </form>
+            );
+        };
+
+        const App = () => {
+            // --- State ---
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [events, setEvents] = useState(() => {
+                const saved = localStorage.getItem('tempo_events');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [theme, setTheme] = useState(() => localStorage.getItem('tempo_theme') || 'light');
+            
+            // Modal State
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'settings'
+            const [selectedDate, setSelectedDate] = useState(new Date());
+            const [editingEvent, setEditingEvent] = useState(null);
+
+            // --- Effects ---
+
+            // Theme Effect
+            useEffect(() => {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+                localStorage.setItem('tempo_theme', theme);
+            }, [theme]);
+
+            // Persistence
+            useEffect(() => {
+                localStorage.setItem('tempo_events', JSON.stringify(events));
+            }, [events]);
+
+            // Notification Checker (Every 60s)
+            useEffect(() => {
+                if(Notification.permission !== "granted") return;
+
+                const checkInterval = setInterval(() => {
+                    const now = new Date();
+                    const nowString = format(now, 'yyyy-MM-dd HH:mm');
+                    
+                    events.forEach(ev => {
+                        const evTime = format(parseISO(ev.date), 'yyyy-MM-dd') + ' ' + ev.time;
+                        // Simple check: matches current minute
+                        if (evTime === nowString) {
+                            new Notification(`Up Next: ${ev.title}`, {
+                                body: ev.desc || `Starts at ${ev.time}`,
+                                icon: 'https://via.placeholder.com/128?text=T'
+                            });
+                        }
+                    });
+                }, 60000);
+
+                return () => clearInterval(checkInterval);
+            }, [events]);
+
+            // --- Handlers ---
+
+            const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
+            const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+            const jumpToday = () => setCurrentDate(new Date());
+
+            const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+            const handleDayClick = (day) => {
+                setSelectedDate(day);
+                setEditingEvent(null);
+                setModalMode('create');
+                setIsModalOpen(true);
+            };
+
+            const handleEventClick = (e, event) => {
+                e.stopPropagation();
+                setSelectedDate(parseISO(event.date));
+                setEditingEvent(event);
+                setModalMode('edit');
+                setIsModalOpen(true);
+            };
+
+            const saveEvent = (eventData) => {
+                if (modalMode === 'create') {
+                    setEvents([...events, eventData]);
+                } else {
+                    setEvents(events.map(ev => ev.id === eventData.id ? eventData : ev));
+                }
+                setIsModalOpen(false);
+                
+                // Trigger notification permission on first save
+                if (Notification.permission === 'default') {
+                    Notification.requestPermission();
+                }
+            };
+
+            const deleteEvent = (id) => {
+                setEvents(events.filter(ev => ev.id !== id));
+                setIsModalOpen(false);
+            };
+
+            const exportEvents = () => {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(events));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", "tempo_calendar_backup.json");
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            };
+
+            const importEvents = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const imported = JSON.parse(e.target.result);
+                        if (Array.isArray(imported)) {
+                            // Merge strategy: Append, avoiding duplicate IDs
+                            const currentIds = new Set(events.map(e => e.id));
+                            const newEvents = imported.filter(e => !currentIds.has(e.id));
+                            setEvents([...events, ...newEvents]);
+                            alert(`Successfully imported ${newEvents.length} events.`);
+                            setIsModalOpen(false);
+                        }
+                    } catch (err) {
+                        alert("Invalid JSON file.");
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            // --- Render Logic ---
+
+            const monthStart = startOfMonth(currentDate);
+            const monthEnd = endOfMonth(monthStart);
+            const startDate = startOfWeek(monthStart);
+            const endDate = endOfWeek(monthEnd);
+            const dateFormat = "d";
+            const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+            const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="glass sticky top-0 z-40 border-b border-stone-200 dark:border-slate-800 transition-colors">
+                        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-rose-500 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-orange-500/20">
+                                        T
+                                    </div>
+                                    <span className="text-xl font-bold tracking-tight font-display hidden sm:block dark:text-white">Tempo</span>
+                                </div>
+                                <div className="h-6 w-px bg-stone-200 dark:bg-slate-700 mx-2 hidden sm:block"></div>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={prevMonth} className="p-2 hover:bg-stone-100 dark:hover:bg-slate-700 rounded-lg transition-colors text-stone-600 dark:text-slate-300">
+                                        <i className="ph ph-caret-left text-lg"></i>
+                                    </button>
+                                    <h2 className="text-lg font-semibold w-36 text-center tabular-nums dark:text-white">
+                                        {format(currentDate, 'MMMM yyyy')}
+                                    </h2>
+                                    <button onClick={nextMonth} className="p-2 hover:bg-stone-100 dark:hover:bg-slate-700 rounded-lg transition-colors text-stone-600 dark:text-slate-300">
+                                        <i className="ph ph-caret-right text-lg"></i>
+                                    </button>
+                                    <button onClick={jumpToday} className="ml-2 px-3 py-1.5 text-sm font-medium bg-stone-100 hover:bg-stone-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white rounded-md transition-colors">
+                                        Today
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={toggleTheme} 
+                                    className="p-2 rounded-lg text-stone-500 hover:text-stone-800 dark:text-slate-400 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-slate-800 transition-all"
+                                    title="Toggle Theme"
+                                >
+                                    {theme === 'light' ? <i className="ph ph-moon text-xl"></i> : <i className="ph ph-sun text-xl"></i>}
+                                </button>
+                                <button 
+                                    onClick={() => { setModalMode('settings'); setIsModalOpen(true); }}
+                                    className="p-2 rounded-lg text-stone-500 hover:text-stone-800 dark:text-slate-400 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-slate-800 transition-all"
+                                    title="Settings & Export"
+                                >
+                                    <i className="ph ph-gear text-xl"></i>
+                                </button>
+                                <button 
+                                    onClick={() => handleDayClick(new Date())}
+                                    className="ml-2 hidden sm:flex items-center gap-2 bg-charcoal dark:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 shadow-lg shadow-stone-900/10 dark:shadow-orange-500/20 transition-all"
+                                >
+                                    <i className="ph ph-plus-bold"></i>
+                                    <span>New Event</span>
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Grid */}
+                    <main className="flex-1 max-w-7xl mx-auto w-full p-4 animate-fade-in">
+                        {/* Weekday Headers */}
+                        <div className="grid grid-cols-7 mb-2">
+                            {weekDays.map(day => (
+                                <div key={day} className="text-center text-xs font-semibold uppercase tracking-wider text-stone-400 dark:text-slate-500 py-2">
+                                    {day}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Calendar Days */}
+                        <div className="grid grid-cols-7 auto-rows-fr bg-stone-200 dark:bg-slate-700 gap-px border border-stone-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                            {days.map((day, dayIdx) => {
+                                const dayEvents = events.filter(e => isSameDay(parseISO(e.date), day))
+                                    .sort((a, b) => {
+                                        if (a.isTimeUndecided && !b.isTimeUndecided) return -1;
+                                        if (!a.isTimeUndecided && b.isTimeUndecided) return 1;
+                                        if (a.isTimeUndecided && b.isTimeUndecided) return 0;
+                                        return a.time.localeCompare(b.time);
+                                    });
+
+                                const isCurrentMonth = isSameMonth(day, monthStart);
+                                const isTodayDate = isToday(day);
+
+                                return (
+                                    <div 
+                                        key={day.toString()}
+                                        onClick={() => handleDayClick(day)}
+                                        className={`min-h-[120px] p-2 bg-white dark:bg-slate-800 hover:bg-stone-50 dark:hover:bg-slate-750 transition-colors cursor-pointer group flex flex-col gap-1 relative ${!isCurrentMonth ? 'bg-stone-50/50 dark:bg-slate-900/50' : ''}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className={`
+                                                w-7 h-7 flex items-center justify-center rounded-full text-sm font-medium transition-all
+                                                ${isTodayDate 
+                                                    ? 'bg-rose-500 text-white shadow-md shadow-rose-500/30' 
+                                                    : isCurrentMonth 
+                                                        ? 'text-stone-700 dark:text-slate-300 group-hover:bg-stone-200 dark:group-hover:bg-slate-700' 
+                                                        : 'text-stone-300 dark:text-slate-600'}
+                                            `}>
+                                                {format(day, dateFormat)}
+                                            </span>
+                                            {/* Mobile add indicator */}
+                                            <div className="sm:hidden opacity-0 group-hover:opacity-100 text-stone-400">
+                                                <i className="ph ph-plus"></i>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[100px] scrollbar-hide">
+                                            {dayEvents.map(event => {
+                                                const colorStyle = EVENT_COLORS.find(c => c.id === event.color)?.class || EVENT_COLORS[0].class;
+                                                return (
+                                                    <div 
+                                                        key={event.id}
+                                                        onClick={(e) => handleEventClick(e, event)}
+                                                        className={`
+                                                            ${colorStyle} px-2 py-1 rounded border text-xs font-medium truncate transition-all 
+                                                            hover:scale-[1.02] hover:shadow-sm cursor-pointer border-l-4
+                                                        `}
+                                                        title={event.isTimeUndecided ? `TBD - ${event.title}` : `${event.time} - ${event.title}`}
+                                                    >
+                                                        <span className="opacity-75 mr-1 text-[10px]">
+                                                            {event.isTimeUndecided ? 'TBD' : event.time}
+                                                        </span>
+                                                        {event.title}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </main>
+
+                    {/* Floating Action Button (Mobile) */}
+                    <button 
+                        onClick={() => handleDayClick(new Date())}
+                        className="sm:hidden fixed bottom-6 right-6 w-14 h-14 bg-charcoal dark:bg-orange-600 text-white rounded-full shadow-xl flex items-center justify-center z-30 hover:scale-110 transition-transform"
+                    >
+                        <i className="ph ph-plus text-2xl"></i>
+                    </button>
+
+                    {/* Dynamic Modal */}
+                    <Modal 
+                        isOpen={isModalOpen} 
+                        onClose={() => setIsModalOpen(false)}
+                        title={modalMode === 'settings' ? 'Settings' : modalMode === 'edit' ? 'Edit Event' : 'Add Event'}
+                    >
+                        {modalMode === 'settings' ? (
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <h4 className="font-medium text-stone-900 dark:text-white">Data Management</h4>
+                                    <p className="text-sm text-stone-500 dark:text-slate-400">Export your calendar to JSON to backup or share with your team.</p>
+                                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                                        <button 
+                                            onClick={exportEvents}
+                                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-stone-100 dark:bg-slate-700 hover:bg-stone-200 dark:hover:bg-slate-600 rounded-lg text-stone-700 dark:text-slate-200 font-medium transition-colors"
+                                        >
+                                            <i className="ph ph-download-simple"></i> Download JSON
+                                        </button>
+                                        <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-stone-100 dark:bg-slate-700 hover:bg-stone-200 dark:hover:bg-slate-600 rounded-lg text-stone-700 dark:text-slate-200 font-medium transition-colors cursor-pointer">
+                                            <i className="ph ph-upload-simple"></i> Import JSON
+                                            <input type="file" accept=".json" onChange={importEvents} className="hidden" />
+                                        </label>
+                                    </div>
+                                </div>
+                                <div className="space-y-2 pt-4 border-t border-stone-100 dark:border-slate-700">
+                                    <h4 className="font-medium text-stone-900 dark:text-white">Notifications</h4>
+                                    <button 
+                                        onClick={() => Notification.requestPermission().then(p => alert(`Permission: ${p}`))}
+                                        className="text-sm text-orange-600 hover:text-orange-700 dark:text-orange-400 font-medium"
+                                    >
+                                        Check / Enable Permissions
+                                    </button>
+                                    <p className="text-xs text-stone-400">Tempo checks for events every minute while the tab is open.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <EventForm 
+                                selectedDate={selectedDate}
+                                existingEvent={editingEvent}
+                                onSave={saveEvent}
+                                onDelete={deleteEvent}
+                                onClose={() => setIsModalOpen(false)}
+                            />
+                        )}
+                    </Modal>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
